@@ -22,7 +22,8 @@ class FacebookProfile(Profile):
 class ProfileFactory:
     def create_profile(self, url: str) -> Profile:
         if 'facebook' in url:
-            data = FacebookProfileCrawler.download_data(url)
+            crawler = FacebookProfileCrawler()
+            data = crawler.download_data(url)
             return FacebookProfile(
                 url=data.get('url', None),
                 ID=data.get('ID', None),
