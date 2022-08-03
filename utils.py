@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import urllib.request
 
 
@@ -29,3 +30,16 @@ def save_url_picture(url: str, filename: str) -> str:
     create_directories(filename)
     urllib.request.urlretrieve(url, filename)
     return filename
+
+
+def get_domain(url: str):
+    match = re.search(
+        "^(?:https?:\/\/)?(?:[^@\n]+@)?(?:www\.)?([^:\/\n?]+)",
+        url,
+        flags=re.IGNORECASE
+    )
+    return match.group() if match is not None else None
+
+
+def remove_domain(url: str):
+    return url.replace(get_domain(url), '')
