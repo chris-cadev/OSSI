@@ -1,25 +1,25 @@
 import re
+import time
 import config as config
-from playwright.sync_api import sync_playwright, Page, Browser
+from profiles import FacebookProfile
 import utils
 import config
+from wrappers import PlaywrigthWrapper
+from playwright.sync_api import Request
 
 DEFAULT_RELATIVES_CRAWL_DEPTH = 3
 
 
 class FacebookCrawler():
-    page: Page = None
-    browser: Browser = None
-    browser_path = '.browser'
-    session_path = '.session'
+
+    def __init__(self) -> None:
+        playwright = PlaywrigthWrapper.get_instance()
+        self.browser = playwright.browser
+        self.page = playwright.page
+        self.session_path = '.session'
 
     def login(self, profile_url: str):
         user_id = utils.remove_domain(profile_url)
-        browser_api = sync_playwright().start()
-        self.browser = browser_api.chromium.launch_persistent_context(
-            self.browser_path, headless=True
-        )
-        self.page = self.browser.new_page()
         self.goto('http://www.facebook.com/login')
         if 'login' in self.page.url:
             form = self.page.locator('//*/form').first
@@ -37,25 +37,15 @@ class FacebookCrawler():
         utils.save_object(
             cookies, f'{self.session_path}/{user_id}-cookies.json'
         )
-        self.page.close()
 
     def goto(self, url: str):
-        if self.page is None or self.page.url == url:
-            return self.page
-        self.page.goto(url, wait_until='networkidle')
-        return self.page
-
-    def close(self):
-        if self.browser is None:
-            return
-        self.browser.close()
+        PlaywrigthWrapper.get_instance().goto(url)
 
 
 class FacebookProfileCrawler(FacebookCrawler):
     def download_data(self, profile_url: str):
         print(f'downloading data from: {profile_url}')
         self.login(profile_url)
-        self.page = self.browser.new_page()
         self.goto(profile_url)
 
         print('getting profile id...')
@@ -125,5 +115,51 @@ class FacebookProfileCrawler(FacebookCrawler):
 
 
 class FacebookFriendCrawler(FacebookCrawler):
-    def download_relative(self):
-        pass
+
+    def infinite_scroll(self):
+        self.page.evaluate(
+            """
+            var intervalID = setInterval(function () {
+                var scrollingElement = (document.scrollingElement || document.body);
+                scrollingElement.scrollTop = scrollingElement.scrollHeight;
+            }, 200);
+
+            """
+        )
+        prev_height = None
+        while True:
+            curr_height = self.page.evaluate(
+                '(window.innerHeight + window.scrollY)')
+            if not prev_height:
+                prev_height = curr_height
+                time.sleep(1)
+            elif prev_height == curr_height:
+                self.page.evaluate('clearInterval(intervalID)')
+                break
+            else:
+                prev_height = curr_height
+                time.sleep(1)
+
+    def download_relatives(self, profile: FacebookProfile):
+        self.goto(f'{profile.url}/friends')
+        self.infinite_scroll()
+        friend_boxes = self.page.locator(
+            '//html/body/div[1]/div/div[1]/div/div[3]/div/div/div/div[1]/div[1]/div/div/div[4]/div/div/div/div/div/div/div/div/div[3]/div'
+        )
+        # TODO: probably use beautifull soup from here https://www.crummy.com/software/BeautifulSoup/bs4/doc/
+
+        friends = []
+        for i in range(friend_boxes.count()):
+            box = friend_boxes.nth(i)
+            link_tag = box.locator('//div[2]/div[1]/a').first
+            image_tag = box.locator('//div[1]/a/img').first
+
+            profile_url = link_tag.get_attribute('href')
+            name = link_tag.inner_text()
+            picture_url = image_tag.get_attribute('src')
+            friends.append({
+                "url": profile_url,
+                "name": name,
+                "picture": picture_url,
+            })
+        return friends

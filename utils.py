@@ -43,3 +43,7 @@ def get_domain(url: str):
 
 def remove_domain(url: str):
     return url.replace(get_domain(url), '')
+
+
+def remove_https_protocol(url: str):
+    return url.replace('https://', '')
